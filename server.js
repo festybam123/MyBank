@@ -13,7 +13,6 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(bodyParser.json());
-
 app.use('/api/auth', authRouter);
 app.use('/api/banking', bankingRouter);
 app.use('/api/accounts', accountsRouter);

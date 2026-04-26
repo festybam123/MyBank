@@ -1,9 +1,17 @@
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
+import { MongoClient } from 'mongodb';
 
-const db = await open({
-  filename: './mybank.db',
-  driver: sqlite3.Database
-});
+const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+const client = new MongoClient(uri);
+
+let db;
+
+try {
+  await client.connect();
+  db = client.db('mybank');
+  console.log('MongoDB connected');
+} catch (err) {
+  console.error('MongoDB connection error:', err);
+  process.exit(1);
+}
 
 export default db;
