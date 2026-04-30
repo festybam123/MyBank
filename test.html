@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>MyBank Test</title>
+</head>
+<body>
+  <h1>Testing MyBank</h1>
+  <div id="log"></div>
+  <script>
+    const log = (msg) => document.getElementById('log').innerHTML += `<p>${msg}</p>`;
+    
+    async function test() {
+      try {
+        // Test backend
+        const r = await fetch('http://localhost:3000/');
+        const d = await r.json();
+        log('Backend: ' + d.message);
+        
+        // Register
+        let res = await fetch('http://localhost:3000/api/auth/register', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            name: 'Demo User',
+            email: 'demo@test.com',
+            password: 'demo123',
+            bvn: '12345678901'
+          })
+        });
+        let data = await res.json();
+        if (res.status === 409) {
+          log('User exists, logging in...');
+          res = await fetch('http://localhost:3000/api/auth/login', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({email:'demo@test.com', password:'demo123'})
+          });
+          data = await res.json();
+        }
+        log('Token: ' + (data.token ? 'Got it' : 'No token'));
+        
+        // Create account
+        res = await fetch('http://localhost:3000/api/accounts/create', {
+          headers: {Authorization: 'Bearer ' + data.token}
+        });
+        data = await res.json();
+        log('Account: ' + (data.account ? data.account.account_number : 'Failed: ' + data.error));
+        
+        // Check balance
+        res = await fetch('http://localhost:3000/api/banking/balance', {
+          headers: {Authorization: 'Bearer ' + data.token}
+        });
+        data = await res.json();
+        log('Balance: NGN ' + data.balance);
+        
+      } catch (e) {
+        log('Error: ' + e.message);
+      }
+    }
+    test();
+  </script>
+</body>
+</html>

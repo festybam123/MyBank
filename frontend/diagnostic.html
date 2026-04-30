@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>MyBank Status Check</title>
+  <style>
+    body { font-family: Arial; padding: 2rem; max-width: 800px; margin: auto; }
+    .ok { color: green; font-weight: bold; }
+    .fail { color: red; font-weight: bold; }
+    .step { margin: 1rem 0; padding: 1rem; border: 1px solid #ccc; border-radius: 8px; }
+    button { padding: 0.5rem 1rem; margin: 0.5rem; cursor: pointer; }
+    pre { background: #f4f4f4; padding: 1rem; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>🔍 MyBank System Check</h1>
+  
+  <div class="step">
+    <h3>Step 1: Check Backend (Port 3000)</h3>
+    <button onclick="checkBackend()">Test Backend</button>
+    <div id="backend"></div>
+  </div>
+
+  <div class="step">
+    <h3>Step 2: Test Full Transaction Flow</h3>
+    <p>This will: Register User → Create Account → Check Balance</p>
+    <button onclick="testFullFlow()">Run Full Test</button>
+    <div id="fulltest"></div>
+  </div>
+
+  <div class="step">
+    <h3>Step 3: Quick Setup Guide</h3>
+    <ol>
+      <li>✅ Start MongoDB (run <code>mongod</code> or start service)</li>
+      <li>✅ Backend on <a href="http://localhost:3000">http://localhost:3000</a></li>
+      <li>✅ Frontend on <a href="http://localhost:5173">http://localhost:5173</a></li>
+      <li>🌐 Open <a href="http://localhost:5173">http://localhost:5173</a> in browser</li>
+      <li>📝 Register new user</li>
+      <li>🏦 Click "Create Account" on dashboard</li>
+      <li>💸 Go to Transfer → Enter another account → Send</li>
+    </ol>
+  </div>
+
+  <script>
+    async function checkBackend() {
+      const d = document.getElementById('backend');
+      d.innerHTML = 'Checking...';
+      try {
+        const r = await fetch('http://localhost:3000/');
+        const j = await r.json();
+        d.innerHTML = `<span class="ok">✓ Backend running: ${j.message}</span>`;
+      } catch(e) {
+        d.innerHTML = `<span class="fail">✗ Backend not reachable: ${e.message}. Is it running on port 3000?</span>`;
+      }
+    }
+
+    async function testFullFlow() {
+      const d = document.getElementById('fulltest');
+      d.innerHTML = 'Running tests...<br>';
+      
+      try {
+        // Register
+        d.innerHTML += '1. Registering user...<br>';
+        let r = await fetch('http://localhost:3000/api/auth/register', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({name:'Test User',email:'test'+Date.now()+'@example.com',password:'test123',bvn:'12345678901'})
+        });
+        let data = await r.json();
+        if(r.status===409) {
+          d.innerHTML += '   User exists, trying login...<br>';
+          r = await fetch('http://localhost:3000/api/auth/login', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({email:'test@example.com',password:'test123'})
+          });
+          data = await r.json();
+        }
+        if(!r.ok) throw new Error(data.error || 'Auth failed');
+        d.innerHTML += `   ✓ Token received<br>`;
+        
+        // Create account
+        d.innerHTML += '2. Creating bank account...<br>';
+        r = await fetch('http://localhost:3000/api/accounts/create', {
+          headers:{Authorization:'Bearer '+data.token}
+        });
+        data = await r.json();
+        if(!r.ok) throw new Error(data.error || 'Account creation failed');
+        d.innerHTML += `   ✓ Account: ${data.account.account_number}<br>`;
+        d.innerHTML += `   ✓ Balance: NGN ${data.account.balance}<br>`;
+        
+        // Check balance
+        d.innerHTML += '3. Checking balance...<br>';
+        r = await fetch('http://localhost:3000/api/banking/balance', {
+          headers:{Authorization:'Bearer '+data.token}
+        });
+        data = await r.json();
+        d.innerHTML += `   ✓ Balance is NGN ${data.balance}<br>`;
+        
+        d.innerHTML += `<span class="ok"><strong>✓ ALL CHECKS PASSED!</strong><br>Your frontend at http://localhost:5173 should work now.</span>`;
+        
+      } catch(e) {
+        d.innerHTML += `<span class="fail">✗ Error: ${e.message}</span>`;
+      }
+    }
+
+    // Auto-run on load
+    window.onload = checkBackend;
+  </script>
+</body>
+</html>
