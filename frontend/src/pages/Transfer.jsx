@@ -83,34 +83,29 @@ export default function Transfer() {
     setForm({ ...form, [name]: value })
   }
 
-   const handleNameEnquiry = async () => {
-     if (!form.to_account) return
-     try {
-       const res = await fetch('/api/banking/name-enquiry', {
-         method: 'POST',
-         headers: {
-           'Content-Type': 'application/json',
-           Authorization: `Bearer ${token}`
-         },
-         body: JSON.stringify({ account_number: form.to_account.trim() })
-       })
-       const text = await res.text()
-       try {
-         const data = JSON.parse(text)
-         if (!res.ok) throw new Error(data.error || 'Account not found')
-         setName(data.name)
-         setError('')
-       } catch (e) {
-         if (text) {
-           throw new Error('Invalid response from server')
-         }
-         throw new Error('No response from server')
-       }
-     } catch (err) {
-       setName('')
-       setError(err.message)
-     }
-   }
+    const handleNameEnquiry = async () => {
+      if (!form.to_account) return
+      setError('')
+      setName('')
+      try {
+        const res = await fetch('/api/banking/name-enquiry', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ account_number: form.to_account.trim() })
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Account not found')
+        setName(data.name)
+      } catch (err) {
+        setName('')
+        if (err.message !== 'Account not found') {
+          setError(err.message)
+        }
+      }
+    }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -120,48 +115,45 @@ export default function Transfer() {
     
     const trimmedAccount = form.to_account.trim();
     
-    try {
-      const res = await fetch('/api/banking/transfer', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          to_account: trimmedAccount,
-          amount: Number(form.amount),
-          description: form.description
+     try {
+        const res = await fetch('/api/banking/transfer', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            to_account: trimmedAccount,
+            amount: Number(form.amount),
+            description: form.description
+          })
         })
-       })
-      
-      const text = await res.text()
-      let data
-      try {
-        data = JSON.parse(text)
-      } catch (e) {
-        throw new Error(text ? 'Invalid response from server' : 'No response from server')
-      }
-      
-      if (!res.ok) {
-        const errorMsg = data.error || 'Transfer failed';
         
-        // User-friendly error messages
-        if (errorMsg.includes('Sender account not found') || errorMsg.includes('not logged in')) {
-          throw new Error('🚫 You need to create a bank account first. Go to Dashboard and click "Create Account" button.');
-        }
-        if (errorMsg.includes('Recipient') && errorMsg.includes('not found')) {
-          throw new Error(`👤 Recipient account "${trimmedAccount}" not found. The recipient must:\n1. Register on this site\n2. Create their bank account\n\nTip: Open this site in a second browser/incognito window to create a test recipient.`);
-        }
-        if (errorMsg.includes('Insufficient funds')) {
-          const balance = data.currentBalance || 'unknown';
-          throw new Error(`💰 Insufficient funds! Your current balance: NGN ${balance.toLocaleString()}`);
-        }
-        if (errorMsg.includes('own account')) {
-          throw new Error('⚠️ You cannot transfer to your own account');
-        }
+        const data = await res.json()
         
-        throw new Error(errorMsg);
-      }
+        if (!res.ok) {
+          const errorMsg = data.error || 'Transfer failed';
+          
+          // User-friendly error messages
+          if (errorMsg.includes('Sender account not found') || errorMsg.includes('not logged in')) {
+            throw new Error('🚫 You need to create a bank account first. Go to Dashboard and click "Create Account" button.');
+          }
+          if (errorMsg.includes('Recipient') && errorMsg.includes('not found')) {
+            throw new Error(`👤 Recipient account "${trimmedAccount}" not found. The recipient must:\n1. Register on this site\n2. Create their bank account\n\nTip: Use the "Quick Test Setup" on the Dashboard to create a test recipient account.`);
+          }
+          if (errorMsg.includes('Insufficient funds')) {
+            const balance = data.currentBalance || 'unknown';
+            throw new Error(`💰 Insufficient funds! Your current balance: NGN ${balance.toLocaleString()}`);
+          }
+          if (errorMsg.includes('own account')) {
+            throw new Error('⚠️ You cannot transfer to your own account');
+          }
+          if (errorMsg.includes('amount')) {
+            throw new Error(`💵 ${errorMsg}`);
+          }
+          
+          throw new Error(errorMsg);
+        }
       
       setResult(data.transaction)
       setForm({ ...form, amount: '', description: '' })

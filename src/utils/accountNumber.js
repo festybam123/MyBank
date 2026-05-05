@@ -1,4 +1,5 @@
 export function generateAccountNumber() {
-  // Nigerian account numbers are 10 digits, starting with 10 for demo
-  return '10' + Math.floor(100000000 + Math.random() * 900000000);
+  // Generate 10-digit account number starting with any digit 1-9
+  // Format: random 10 digits
+  return Math.floor(1000000000 + Math.random() * 9000000000).toString();
 }

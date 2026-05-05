@@ -37,7 +37,8 @@ export const getBalance = async (req, res) => {
       { projection: { balance: 1 } }
     );
     if (!result) return res.status(404).json({ error: 'No account found' });
-    res.json({ balance: result.balance });
+    const balance = typeof result.balance === 'number' ? result.balance : Number(result.balance);
+    res.json({ balance: balance });
   } catch (err) {
     res.status(500).json({ error: 'Balance check failed' });
   }
@@ -80,25 +81,26 @@ export const transfer = async (req, res) => {
     console.log('Missing fields');
     return res.status(400).json({ error: 'to_account and amount required' });
   }
-  if (amount <= 0) {
-    console.log('Invalid amount');
+  if (isNaN(amount) || Number(amount) <= 0) {
+    console.log('Invalid amount:', amount);
     return res.status(400).json({ error: 'Invalid amount' });
   }
+  const amountNum = Number(amount);
 
   const accountNumber = to_account.toString().trim();
-  const session = db.client.startSession();
+  // Basic account number validation (10-11 digits for Nigerian accounts)
+  if (!/^\d{10,11}$/.test(accountNumber)) {
+    console.log('Invalid account number format:', accountNumber);
+    return res.status(400).json({ error: 'Invalid account number format. Must be 10-11 digits.' });
+  }
 
   try {
-    session.startTransaction();
-
     // Find sender
     const sender = await db.collection('accounts').findOne(
-      { customer_id: new ObjectId(req.user.id) },
-      { session }
+      { customer_id: new ObjectId(req.user.id) }
     );
 
     if (!sender) {
-      await session.abortTransaction();
       console.log('Sender account not found for user:', req.user.id);
       return res.status(404).json({
         error: 'Sender account not found. Please create a bank account first.'
@@ -107,24 +109,21 @@ export const transfer = async (req, res) => {
 
     console.log('Sender found:', { account: sender.account_number, balance: sender.balance });
 
-    if (sender.balance < amount) {
-      await session.abortTransaction();
-      console.log('Insufficient funds:', { balance: sender.balance, needed: amount });
+    if (sender.balance < amountNum) {
+      console.log('Insufficient funds:', { balance: sender.balance, needed: amountNum });
       return res.status(400).json({
         error: 'Insufficient funds',
         currentBalance: sender.balance,
-        required: amount
+        required: amountNum
       });
     }
 
     // Find recipient
     const recipient = await db.collection('accounts').findOne(
-      { account_number: accountNumber },
-      { session }
+      { account_number: accountNumber }
     );
 
     if (!recipient) {
-      await session.abortTransaction();
       console.log('Recipient not found:', accountNumber);
       return res.status(404).json({
         error: `Recipient account ${accountNumber} not found. The recipient must register and create an account.`
@@ -135,49 +134,51 @@ export const transfer = async (req, res) => {
 
     // Prevent self-transfer
     if (sender._id.toString() === recipient._id.toString()) {
-      await session.abortTransaction();
       return res.status(400).json({ error: 'Cannot transfer to your own account' });
     }
 
-    // Debit sender
-    await db.collection('accounts').updateOne(
-      { _id: sender._id },
-      { $inc: { balance: -amount } },
-      { session }
+    // Debit sender - atomic update with balance check
+    const debitResult = await db.collection('accounts').updateOne(
+      { _id: sender._id, balance: { $gte: amountNum } },
+      { $inc: { balance: -amountNum } }
     );
 
-    // Credit recipient
+    if (debitResult.modifiedCount === 0) {
+      console.log('Failed to debit sender - insufficient funds or concurrent modification');
+      return res.status(400).json({
+        error: 'Insufficient funds or concurrent modification'
+      });
+    }
+
+    // Credit recipient - atomic update
     await db.collection('accounts').updateOne(
       { _id: recipient._id },
-      { $inc: { balance: amount } },
-      { session }
+      { $inc: { balance: amountNum } }
     );
 
     console.log('Balance updates completed');
 
-    // Create transactions
-    const [tx1] = await Promise.all([
+    // Create transaction records
+    const [tx1, tx2] = await Promise.all([
       db.collection('transactions').insertOne({
         account_id: sender._id,
         type: 'debit',
-        amount,
+        amount: amountNum,
         description: description || '',
         status: 'success',
         recipient_account: accountNumber,
         created_at: new Date()
-      }, { session }),
+      }),
       db.collection('transactions').insertOne({
         account_id: recipient._id,
         type: 'credit',
-        amount,
+        amount: amountNum,
         description: description || '',
         status: 'success',
         recipient_account: sender.account_number,
         created_at: new Date()
-      }, { session })
+      })
     ]);
-
-    await session.commitTransaction();
 
     console.log('Transfer completed successfully');
 
@@ -186,22 +187,19 @@ export const transfer = async (req, res) => {
         id: tx1.insertedId,
         account_id: sender._id,
         type: 'debit',
-        amount,
+        amount: amountNum,
         description: description || '',
         status: 'success',
         recipient_account: accountNumber
       },
-      newBalance: sender.balance - amount
+      newBalance: sender.balance - amountNum
     });
 
   } catch (err) {
-    await session.abortTransaction();
     console.error('Transfer error:', err);
     res.status(500).json({
       error: 'Transfer failed',
       message: err.message
     });
-  } finally {
-    session.endSession();
   }
 };

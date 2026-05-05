@@ -10,3 +10,34 @@
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
+
+
+<!-- 
+POST /api/auth/register - Register a new user
+Required fields: name, email, password
+Optional: bvn or nin for verification
+POST /api/auth/login - Login and get JWT token
+Required fields: email, password
+Accounts Endpoints (require authentication)
+POST /api/accounts/create - Create a bank account
+Requires: Authorization header with Bearer token
+No request body needed (uses authenticated user)
+GET /api/accounts/me - Get account details for authenticated user
+Requires: Authorization header with Bearer token
+Banking Endpoints (require authentication)
+POST /api/banking/name-enquiry - Check account name by account number
+Requires: Authorization header with Bearer token
+Body: { "account_number": "1234567890" }
+GET /api/banking/balance - Get account balance
+Requires: Authorization header with Bearer token
+GET /api/banking/transactions - Get transaction history
+Requires: Authorization header with Bearer token
+GET /api/banking/transaction/:id - Get specific transaction by ID
+Requires: Authorization header with Bearer token
+Parameter: transaction ID in URL
+POST /api/banking/transfer - Transfer money to another account
+Requires: Authorization header with Bearer token
+Body: { "to_account": "recipient_account_number", "amount": 1000.50, "description": "Optional description" }
+Basic Endpoint
+GET / - API health check
+Returns: { message: 'MyBank API running' } -->
