@@ -13,34 +13,32 @@ export default function Register() {
 
   if (token) return <Navigate to="/" />
 
-   const handleSubmit = async (e) => {
-     e.preventDefault()
-     setError('')
-     setLoading(true)
-     try {
-       const res = await fetch('/api/auth/register', {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify(form)
-       })
-       const text = await res.text()
-       try {
-         const data = JSON.parse(text)
-         if (!res.ok) throw new Error(data.error || 'Registration failed')
-         login(data.user, data.token)
-         navigate('/')
-       } catch (e) {
-         if (text) {
-           throw new Error('Invalid response from server')
-         }
-         throw new Error('No response from server')
-       }
-     } catch (err) {
-       setError(err.message)
-     } finally {
-       setLoading(false)
-     }
-   }
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      })
+      const text = await res.text()
+      let data
+      try {
+        data = JSON.parse(text)
+      } catch (parseErr) {
+        throw new Error('Invalid response from server')
+      }
+      if (!res.ok) throw new Error(data.error || 'Registration failed')
+      login(data.user, data.token)
+      navigate('/')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <div style={{ maxWidth: '500px', margin: '2rem auto' }}>

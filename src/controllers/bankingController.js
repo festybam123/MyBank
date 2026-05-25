@@ -1,5 +1,6 @@
 import db from '../db.js';
 import { ObjectId } from 'mongodb';
+import { initiateOTPRequest, verifyTransferOTP } from '../services/otpService.js';
 
 export const nameEnquiry = async (req, res) => {
   const { account_number } = req.body;
@@ -73,14 +74,42 @@ export const getTransactions = async (req, res) => {
   }
 };
 
-export const transfer = async (req, res) => {
-  const { to_account, amount, description } = req.body;
-  console.log('Transfer attempt:', { from: req.user.id, to_account, amount, description });
-
-  if (!to_account || !amount) {
-    console.log('Missing fields');
-    return res.status(400).json({ error: 'to_account and amount required' });
+export const requestOTP = async (req, res) => {
+  try {
+    const userId = req.user.id.toString();
+    const result = await initiateOTPRequest(userId, { channel: 'email' });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to send OTP', message: err.message });
   }
+};
+
+export const verifyOTP = async (req, res) => {
+  const { otp } = req.body;
+  if (!otp) return res.status(400).json({ error: 'OTP required' });
+  const userId = req.user.id.toString();
+  const result = await verifyTransferOTP(userId, otp);
+  if (!result.valid) {
+    return res.status(401).json({ error: result.error });
+  }
+  res.json({ valid: true, message: 'OTP verified' });
+};
+
+export const transfer = async (req, res) => {
+  const { to_account, amount, description, otp } = req.body;
+
+  if (!to_account || !amount || !otp) {
+    return res.status(400).json({ error: 'to_account, amount, and OTP are required' });
+  }
+
+  const userId = req.user.id.toString();
+  const otpResult = await verifyTransferOTP(userId, otp);
+  if (!otpResult.valid) {
+    return res.status(401).json({ error: `OTP verification failed: ${otpResult.error}` });
+  }
+
+  console.log('Transfer attempt:', { from: userId, to_account, amount, description });
+
   if (isNaN(amount) || Number(amount) <= 0) {
     console.log('Invalid amount:', amount);
     return res.status(400).json({ error: 'Invalid amount' });
@@ -88,20 +117,18 @@ export const transfer = async (req, res) => {
   const amountNum = Number(amount);
 
   const accountNumber = to_account.toString().trim();
-  // Basic account number validation (10-11 digits for Nigerian accounts)
   if (!/^\d{10,11}$/.test(accountNumber)) {
     console.log('Invalid account number format:', accountNumber);
     return res.status(400).json({ error: 'Invalid account number format. Must be 10-11 digits.' });
   }
 
   try {
-    // Find sender
     const sender = await db.collection('accounts').findOne(
-      { customer_id: new ObjectId(req.user.id) }
+      { customer_id: new ObjectId(userId) }
     );
 
     if (!sender) {
-      console.log('Sender account not found for user:', req.user.id);
+      console.log('Sender account not found for user:', userId);
       return res.status(404).json({
         error: 'Sender account not found. Please create a bank account first.'
       });
@@ -118,7 +145,6 @@ export const transfer = async (req, res) => {
       });
     }
 
-    // Find recipient
     const recipient = await db.collection('accounts').findOne(
       { account_number: accountNumber }
     );
@@ -132,12 +158,10 @@ export const transfer = async (req, res) => {
 
     console.log('Recipient found:', recipient.account_number);
 
-    // Prevent self-transfer
     if (sender._id.toString() === recipient._id.toString()) {
       return res.status(400).json({ error: 'Cannot transfer to your own account' });
     }
 
-    // Debit sender - atomic update with balance check
     const debitResult = await db.collection('accounts').updateOne(
       { _id: sender._id, balance: { $gte: amountNum } },
       { $inc: { balance: -amountNum } }
@@ -150,7 +174,6 @@ export const transfer = async (req, res) => {
       });
     }
 
-    // Credit recipient - atomic update
     await db.collection('accounts').updateOne(
       { _id: recipient._id },
       { $inc: { balance: amountNum } }
@@ -158,7 +181,6 @@ export const transfer = async (req, res) => {
 
     console.log('Balance updates completed');
 
-    // Create transaction records
     const [tx1, tx2] = await Promise.all([
       db.collection('transactions').insertOne({
         account_id: sender._id,
@@ -167,7 +189,8 @@ export const transfer = async (req, res) => {
         description: description || '',
         status: 'success',
         recipient_account: accountNumber,
-        created_at: new Date()
+        created_at: new Date(),
+        encrypted: true
       }),
       db.collection('transactions').insertOne({
         account_id: recipient._id,
@@ -176,7 +199,8 @@ export const transfer = async (req, res) => {
         description: description || '',
         status: 'success',
         recipient_account: sender.account_number,
-        created_at: new Date()
+        created_at: new Date(),
+        encrypted: true
       })
     ]);
 

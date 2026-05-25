@@ -9,38 +9,42 @@ export default function Transfer() {
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadingOTP, setLoadingOTP] = useState(false)
   const [name, setName] = useState('')
   const [hasAccount, setHasAccount] = useState(true)
   const [checkingAccount, setCheckingAccount] = useState(true)
+  const [otp, setOtp] = useState('')
+  const [otpSent, setOtpSent] = useState(false)
+  const [otpVerified, setOtpVerified] = useState(false)
 
   useEffect(() => {
     checkAccount()
   }, [])
 
-     const checkAccount = async () => {
-     try {
-       const res = await fetch('/api/accounts/me', {
-         headers: { Authorization: `Bearer ${token}` }
-       })
-       if (res.status === 404) {
-         setHasAccount(false)
-       } else if (res.ok) {
-         setHasAccount(true)
-       } else {
-         const text = await res.text()
-         try {
-           const data = JSON.parse(text)
-           console.error('Account check failed:', data)
-         } catch (e) {
-           console.error('Account check failed:', text ? 'Invalid response' : 'No response')
-         }
-       }
-     } catch (err) {
-       console.error('Error checking account:', err)
-     } finally {
-       setCheckingAccount(false)
-     }
-   }
+  const checkAccount = async () => {
+    try {
+      const res = await fetch('/api/accounts/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (res.status === 404) {
+        setHasAccount(false)
+      } else if (res.ok) {
+        setHasAccount(true)
+      } else {
+        const text = await res.text()
+        try {
+          const data = JSON.parse(text)
+          console.error('Account check failed:', data)
+        } catch (e) {
+          console.error('Account check failed:', text ? 'Invalid response' : 'No response')
+        }
+      }
+    } catch (err) {
+      console.error('Error checking account:', err)
+    } finally {
+      setCheckingAccount(false)
+    }
+  }
 
   if (checkingAccount) {
     return <div className="empty-state"><h3>Loading...</h3></div>
@@ -83,29 +87,76 @@ export default function Transfer() {
     setForm({ ...form, [name]: value })
   }
 
-    const handleNameEnquiry = async () => {
-      if (!form.to_account) return
-      setError('')
+  const handleNameEnquiry = async () => {
+    if (!form.to_account) return
+    setError('')
+    setName('')
+    try {
+      const res = await fetch('/api/banking/name-enquiry', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ account_number: form.to_account.trim() })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Account not found')
+      setName(data.name)
+    } catch (err) {
       setName('')
-      try {
-        const res = await fetch('/api/banking/name-enquiry', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({ account_number: form.to_account.trim() })
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Account not found')
-        setName(data.name)
-      } catch (err) {
-        setName('')
-        if (err.message !== 'Account not found') {
-          setError(err.message)
-        }
+      if (err.message !== 'Account not found') {
+        setError(err.message)
       }
     }
+  }
+
+  const sendOTP = async () => {
+    setLoadingOTP(true)
+    setError('')
+    try {
+      const res = await fetch('/api/banking/request-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to send OTP')
+      setOtpSent(true)
+      if (data.otp) {
+        alert(`Your OTP is: ${data.otp}\n(Email not configured - this is for testing)`)
+      }
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoadingOTP(false)
+    }
+  }
+
+  const verifyOTP = async () => {
+    if (!otp) return
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/banking/verify-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ otp })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'OTP verification failed')
+      setOtpVerified(true)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -115,52 +166,55 @@ export default function Transfer() {
     
     const trimmedAccount = form.to_account.trim();
     
-     try {
-        const res = await fetch('/api/banking/transfer', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            to_account: trimmedAccount,
-            amount: Number(form.amount),
-            description: form.description
-          })
+    try {
+      const res = await fetch('/api/banking/transfer', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          to_account: trimmedAccount,
+          amount: Number(form.amount),
+          description: form.description,
+          otp
         })
+      })
+      
+      const data = await res.json()
+      
+      if (!res.ok) {
+        const errorMsg = data.error || 'Transfer failed';
         
-        const data = await res.json()
-        
-        if (!res.ok) {
-          const errorMsg = data.error || 'Transfer failed';
-          
-          // User-friendly error messages
-          if (errorMsg.includes('Sender account not found') || errorMsg.includes('not logged in')) {
-            throw new Error('🚫 You need to create a bank account first. Go to Dashboard and click "Create Account" button.');
-          }
-          if (errorMsg.includes('Recipient') && errorMsg.includes('not found')) {
-            throw new Error(`👤 Recipient account "${trimmedAccount}" not found. The recipient must:\n1. Register on this site\n2. Create their bank account\n\nTip: Use the "Quick Test Setup" on the Dashboard to create a test recipient account.`);
-          }
-          if (errorMsg.includes('Insufficient funds')) {
-            const balance = data.currentBalance || 'unknown';
-            throw new Error(`💰 Insufficient funds! Your current balance: NGN ${balance.toLocaleString()}`);
-          }
-          if (errorMsg.includes('own account')) {
-            throw new Error('⚠️ You cannot transfer to your own account');
-          }
-          if (errorMsg.includes('amount')) {
-            throw new Error(`💵 ${errorMsg}`);
-          }
-          
-          throw new Error(errorMsg);
+        if (errorMsg.includes('Sender account not found') || errorMsg.includes('not logged in')) {
+          throw new Error('🚫 You need to create a bank account first. Go to Dashboard and click "Create Account" button.');
         }
+        if (errorMsg.includes('Recipient') && errorMsg.includes('not found')) {
+          throw new Error(`👤 Recipient account "${trimmedAccount}" not found. The recipient must:\n1. Register on this site\n2. Create their bank account\n\nTip: Use the "Quick Test Setup" on the Dashboard to create a test recipient account.`);
+        }
+        if (errorMsg.includes('Insufficient funds')) {
+          const balance = data.currentBalance || 'unknown';
+          throw new Error(`💰 Insufficient funds! Your current balance: NGN ${balance.toLocaleString()}`);
+        }
+        if (errorMsg.includes('own account')) {
+          throw new Error('⚠️ You cannot transfer to your own account');
+        }
+        if (errorMsg.includes('amount')) {
+          throw new Error(`💵 ${errorMsg}`);
+        }
+        if (errorMsg.includes('OTP')) {
+          throw new Error(`🔐 ${errorMsg}`);
+        }
+        
+        throw new Error(errorMsg);
+      }
       
       setResult(data.transaction)
       setForm({ ...form, amount: '', description: '' })
       setName('')
-      
-      // Refresh account balance (would need to fetch from backend)
-      // For now, show success
+      setOtp('')
+      setOtpSent(false)
+      setOtpVerified(false)
       
     } catch (err) {
       setError(err.message)
@@ -230,9 +284,32 @@ export default function Transfer() {
               />
             </div>
 
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Processing...' : 'Send Money'}
-            </button>
+            {!otpSent ? (
+              <button type="button" onClick={sendOTP} className="btn btn-primary" disabled={loadingOTP}>
+                {loadingOTP ? 'Sending OTP...' : 'Send OTP for Verification'}
+              </button>
+            ) : !otpVerified ? (
+              <div>
+                <div className="form-group">
+                  <label>Enter OTP</label>
+                  <input
+                    type="text"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="Enter 6-digit OTP"
+                    maxLength="6"
+                    style={{ letterSpacing: '0.5rem', fontSize: '1.5rem', textAlign: 'center' }}
+                  />
+                </div>
+                <button type="button" onClick={verifyOTP} className="btn btn-primary" disabled={loading}>
+                  {loading ? 'Verifying...' : 'Verify OTP'}
+                </button>
+              </div>
+            ) : (
+              <button type="submit" className="btn btn-success" disabled={loading}>
+                {loading ? 'Processing...' : 'Send Money'}
+              </button>
+            )}
           </form>
         </div>
 
@@ -244,6 +321,9 @@ export default function Transfer() {
             <li>✓ Get confirmation immediately</li>
             <li>✓ View all transactions in history</li>
           </ul>
+          <div style={{ marginTop: '1rem', padding: '1rem', background: '#fef3c7', borderRadius: '8px' }}>
+            <strong>Security:</strong> All transfers require OTP verification for your protection.
+          </div>
         </div>
       </div>
     </div>

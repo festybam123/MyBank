@@ -11,34 +11,32 @@ export default function Login() {
 
   if (token) return <Navigate to="/" />
 
-   const handleSubmit = async (e) => {
-     e.preventDefault()
-     setError('')
-     setLoading(true)
-     try {
-       const res = await fetch('/api/auth/login', {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify(form)
-       })
-       const text = await res.text()
-       try {
-         const data = JSON.parse(text)
-         if (!res.ok) throw new Error(data.error || 'Login failed')
-         login(data.user, data.token)
-         navigate('/')
-       } catch (e) {
-         if (text) {
-           throw new Error('Invalid response from server')
-         }
-         throw new Error('No response from server')
-       }
-     } catch (err) {
-       setError(err.message)
-     } finally {
-       setLoading(false)
-     }
-   }
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      })
+      const text = await res.text()
+      let data
+      try {
+        data = JSON.parse(text)
+      } catch (parseErr) {
+        throw new Error('Invalid response from server')
+      }
+      if (!res.ok) throw new Error(data.error || 'Login failed')
+      login(data.user, data.token)
+      navigate('/')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
     <div style={{ maxWidth: '400px', margin: '2rem auto' }}>
@@ -69,6 +67,9 @@ export default function Login() {
           </button>
         </form>
         <p style={{ marginTop: '1rem', textAlign: 'center' }}>
+          <Link to="/forgot-password" style={{ color: 'var(--primary)', display: 'block', marginBottom: '0.5rem' }}>
+            Forgot Password?
+          </Link>
           Don't have an account? <Link to="/register" style={{ color: 'var(--primary)' }}>Register</Link>
         </p>
       </div>

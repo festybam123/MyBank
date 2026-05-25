@@ -7,6 +7,8 @@ import Dashboard from './pages/Dashboard'
 import Transfer from './pages/Transfer'
 import Transactions from './pages/Transactions'
 import NameEnquiry from './pages/NameEnquiry'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
 
 function ProtectedRoute({ children }) {
   const { token, loading } = useAuth()
@@ -19,6 +21,8 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/transfer" element={<ProtectedRoute><Transfer /></ProtectedRoute>} />
       <Route path="/transactions" element={<ProtectedRoute><Transactions /></ProtectedRoute>} />
